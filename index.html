@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Color Palette Generator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #111827; color: #f3f4f6; font-family: 'Segoe UI', sans-serif; }
+  canvas { cursor: crosshair; border-radius: 50%; display: block; }
+  .swatch { width: 56px; height: 56px; border-radius: 8px; cursor: pointer; position: relative; border: 2px solid transparent; transition: transform 0.1s, border-color 0.1s; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+  .swatch:hover { transform: scale(1.08); border-color: #fff; }
+  .swatch-hex { font-size: 9px; background: rgba(0,0,0,0.6); color: #fff; width: 100%; text-align: center; padding: 1px 0; font-family: monospace; }
+  .swatch-label { font-size: 10px; color: #9ca3af; text-align: center; margin-top: 3px; }
+  .palette-section { margin-bottom: 16px; }
+  .palette-title { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  input[type=range] { accent-color: #8b5cf6; }
+  .copied-toast { position: fixed; bottom: 20px; right: 20px; background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 8px 16px; font-size: 13px; z-index: 1000; display: none; }
+</style>
+</head>
+<body class="min-h-screen p-5">
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-2xl font-bold text-purple-300 mb-1">Color Palette Generator</h1>
+  <p class="text-gray-500 text-sm mb-5">Click the color wheel to pick a base hue. Swatches copy hex on click.</p>
+
+  <div class="flex flex-wrap gap-8 items-start">
+    <!-- Wheel + controls -->
+    <div class="flex flex-col items-center gap-4">
+      <canvas id="colorWheel" width="240" height="240" aria-label="Color wheel — click to select hue"></canvas>
+      <div class="w-60 space-y-3">
+        <div>
+          <label for="lightnessSlider" class="text-sm text-purple-300">Lightness: <span id="lightnessVal">50%</span></label>
+          <input type="range" id="lightnessSlider" min="20" max="80" value="50" class="w-full" aria-label="Base color lightness" oninput="updatePalettes()">
+        </div>
+        <div>
+          <label for="saturationSlider" class="text-sm text-purple-300">Saturation: <span id="saturationVal">70%</span></label>
+          <input type="range" id="saturationSlider" min="10" max="100" value="70" class="w-full" aria-label="Base color saturation" oninput="updatePalettes()">
+        </div>
+        <div class="flex items-center gap-3 mt-2">
+          <div id="basePreview" class="w-14 h-14 rounded-lg border-2 border-white shadow"></div>
+          <div>
+            <div class="text-xs text-gray-400">Base Color</div>
+            <div id="baseHex" class="font-mono text-purple-300 text-sm">#ffffff</div>
+            <div id="baseHsl" class="font-mono text-gray-500 text-xs"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Palettes -->
+    <div class="flex-1 min-w-[280px]">
+      <div class="palette-section">
+        <div class="palette-title">Analogous (±30°, ±60°)</div>
+        <div id="analogous" class="flex gap-2 flex-wrap"></div>
+      </div>
+      <div class="palette-section">
+        <div class="palette-title">Complementary (180°)</div>
+        <div id="complementary" class="flex gap-2 flex-wrap"></div>
+      </div>
+      <div class="palette-section">
+        <div class="palette-title">Split-Complementary (150°, 210°)</div>
+        <div id="splitComplementary" class="flex gap-2 flex-wrap"></div>
+      </div>
+      <div class="palette-section">
+        <div class="palette-title">Triadic (120°, 240°)</div>
+        <div id="triadic" class="flex gap-2 flex-wrap"></div>
+      </div>
+      <div class="palette-section">
+        <div class="palette-title">Tetradic / Square (90°, 180°, 270°)</div>
+        <div id="tetradic" class="flex gap-2 flex-wrap"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="copiedToast" class="copied-toast" aria-live="polite">Copied!</div>
+
+<script>
+let baseHue = 200;
+let baseLightness = 50;
+let baseSaturation = 70;
+
+function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return '#' + f(0) + f(8) + f(4);
+}
+
+function drawWheel() {
+  const canvas = document.getElementById('colorWheel');
+  const ctx = canvas.getContext('2d');
+  const cx = 120, cy = 120, r = 115;
+  ctx.clearRect(0, 0, 240, 240);
+
+  for (let angle = 0; angle < 360; angle += 0.5) {
+    const start = (angle - 0.5) * Math.PI / 180;
+    const end = (angle + 0.5) * Math.PI / 180;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, `hsl(${angle},0%,${baseLightness}%)`);
+    grad.addColorStop(1, `hsl(${angle},${baseSaturation}%,${baseLightness}%)`);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  // Draw marker for selected hue
+  const markerAngle = (baseHue - 90) * Math.PI / 180;
+  const markerR = r * 0.78;
+  const mx = cx + markerR * Math.cos(markerAngle);
+  const my = cy + markerR * Math.sin(markerAngle);
+  ctx.beginPath();
+  ctx.arc(mx, my, 8, 0, Math.PI * 2);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(mx, my, 5, 0, Math.PI * 2);
+  ctx.fillStyle = hslToHex(baseHue, baseSaturation, baseLightness);
+  ctx.fill();
+}
+
+document.getElementById('colorWheel').addEventListener('click', function(e) {
+  const rect = this.getBoundingClientRect();
+  const cx = 120, cy = 120;
+  const dx = e.clientX - rect.left - cx;
+  const dy = e.clientY - rect.top - cy;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist > 115) return;
+  baseHue = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+  updatePalettes();
+});
+
+function makeSwatch(hex, label) {
+  const wrap = document.createElement('div');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.alignItems = 'center';
+  const sw = document.createElement('div');
+  sw.className = 'swatch';
+  sw.style.background = hex;
+  sw.setAttribute('role', 'button');
+  sw.setAttribute('aria-label', `Copy color ${hex}`);
+  sw.tabIndex = 0;
+  const hexLabel = document.createElement('div');
+  hexLabel.className = 'swatch-hex';
+  hexLabel.textContent = hex;
+  sw.appendChild(hexLabel);
+  sw.addEventListener('click', () => copySwatch(hex));
+  sw.addEventListener('keydown', e => { if (e.key === 'Enter') copySwatch(hex); });
+  const lbl = document.createElement('div');
+  lbl.className = 'swatch-label';
+  lbl.textContent = label;
+  wrap.appendChild(sw);
+  wrap.appendChild(lbl);
+  return wrap;
+}
+
+function copySwatch(hex) {
+  navigator.clipboard.writeText(hex).catch(() => {});
+  const t = document.getElementById('copiedToast');
+  t.textContent = 'Copied ' + hex;
+  t.style.display = 'block';
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => t.style.display = 'none', 1500);
+}
+
+function updatePalettes() {
+  baseLightness = parseInt(document.getElementById('lightnessSlider').value);
+  baseSaturation = parseInt(document.getElementById('saturationSlider').value);
+  document.getElementById('lightnessVal').textContent = baseLightness + '%';
+  document.getElementById('saturationVal').textContent = baseSaturation + '%';
+  drawWheel();
+
+  const H = baseHue, S = baseSaturation, L = baseLightness;
+  const base = hslToHex(H, S, L);
+  document.getElementById('basePreview').style.background = base;
+  document.getElementById('baseHex').textContent = base;
+  document.getElementById('baseHsl').textContent = `hsl(${Math.round(H)}, ${S}%, ${L}%)`;
+
+  // Analogous
+  const analogHues = [H-60, H-30, H, H+30, H+60];
+  const analogLabels = ['-60°', '-30°', 'Base', '+30°', '+60°'];
+  setSwatches('analogous', analogHues.map((h, i) => ({ hex: hslToHex(h, S, L), label: analogLabels[i] })));
+
+  // Complementary
+  setSwatches('complementary', [
+    { hex: hslToHex(H, S, L), label: 'Base' },
+    { hex: hslToHex(H+180, S, L), label: '+180°' }
+  ]);
+
+  // Split-Complementary
+  setSwatches('splitComplementary', [
+    { hex: hslToHex(H, S, L), label: 'Base' },
+    { hex: hslToHex(H+150, S, L), label: '+150°' },
+    { hex: hslToHex(H+210, S, L), label: '+210°' }
+  ]);
+
+  // Triadic
+  setSwatches('triadic', [
+    { hex: hslToHex(H, S, L), label: 'Base' },
+    { hex: hslToHex(H+120, S, L), label: '+120°' },
+    { hex: hslToHex(H+240, S, L), label: '+240°' }
+  ]);
+
+  // Tetradic
+  setSwatches('tetradic', [
+    { hex: hslToHex(H, S, L), label: 'Base' },
+    { hex: hslToHex(H+90, S, L), label: '+90°' },
+    { hex: hslToHex(H+180, S, L), label: '+180°' },
+    { hex: hslToHex(H+270, S, L), label: '+270°' }
+  ]);
+}
+
+function setSwatches(containerId, swatches) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  swatches.forEach(({ hex, label }) => el.appendChild(makeSwatch(hex, label)));
+}
+
+updatePalettes();
+</script>
+</body>
+</html>
